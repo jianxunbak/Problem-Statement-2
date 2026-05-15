@@ -1,80 +1,91 @@
-# Technical Summary: BIM Revit → Notion Agent
-> Generated for integration into Master Project (Agent A)
+# 🏗️ Bot-i: Revit → Notion BIM Assistant
+> Technical Integration Summary for Agent A
 
 ---
 
 ## 1. System Overview
 
-### Primary Function
-This agent is a **BIM Data Pipeline with AI-assisted export**. Its core purpose is to extract structured architectural model data from Autodesk Revit, store it temporarily in a cloud-hosted REST server, and allow users to query and push selective subsets of that data into Notion databases via a natural-language chat interface powered by Claude AI.
+Bot-i is a cloud-based BIM data pipeline that extracts structured element data from Autodesk Revit models and synchronizes it to Notion databases via a natural language Claude AI interface.
 
 ### Core Capabilities
-- One-click extraction of BIM elements from Revit via a PyRevit toolbar button
-- Cloud-hosted REST API (FastAPI on Railway) that acts as a stateful in-memory data store
-- Browser-based Claude AI chat interface (`/chat`) for natural-language data export commands
-- Keyword and category-based filtering of Revit elements before Notion push
-- Two direct-push modes (new database / versioned database) that bypass the AI layer entirely
-- Background-threaded Notion push to avoid HTTP timeout on large datasets
-- Job status tracking (`/status/{job_id}`) for async operations
+
+| Capability | Description |
+|---|---|
+| Universal Revit Extraction | Extracts ALL model element categories (Rooms, Doors, Walls, Floors, Parking, Windows, Furniture, etc.) via PyRevit button |
+| Cloud Data Store | Uploads extracted data to a Railway-hosted FastAPI server, stored in-memory + JSON snapshots |
+| Natural Language Query | Users interact via `/chat` web UI — Claude AI interprets requests and executes Notion operations |
+| Category + Keyword + Level Filtering | Filter elements before pushing to Notion |
+| Change Detection | Compares two snapshots and reports Added / Deleted / Modified elements by `unique_id` |
+| Background Push | All Notion pushes run in background threads with job status tracking |
+| Two Push Modes | New database (snapshot) or versioned push to fixed database |
 
 ---
 
 ## 2. Tech Stack
 
-| Layer | Technology | Notes |
-|---|---|---|
-| BIM Client | **Autodesk Revit 2025/2026** | Host application |
-| Revit scripting | **PyRevit** (IronPython 2.7) | Button extension framework |
-| Revit API | **Autodesk.Revit.DB** | Element extraction |
-| Server language | **Python 3.13** | FastAPI server and agent |
-| Web framework | **FastAPI** | REST API + HTML chat UI |
-| ASGI server | **Uvicorn** | Local dev and Railway runtime |
-| AI SDK | **anthropic** (Python) | Claude claude-sonnet-4-20250514 |
-| Notion integration | **Notion REST API v1** (`api.notion.com/v1`) | Direct HTTP via `requests` |
-| HTTP client | **requests** | Used in server and agent |
-| Data validation | **pydantic** | FastAPI request models |
-| Deployment | **Railway** | Cloud PaaS, auto-deploy from GitHub |
-| Version control | **GitHub** | Source of truth for Railway CI/CD |
-| Package manager | **pip** | Python dependencies |
+### Server (Railway Cloud)
 
-### `requirements.txt`
-```
-fastapi
-uvicorn
-requests
-pydantic
-anthropic
-```
+| Component | Technology | Version |
+|---|---|---|
+| Language | Python | 3.13.13 |
+| Web Framework | FastAPI | latest |
+| ASGI Server | Uvicorn | latest |
+| AI SDK | Anthropic Python SDK | latest |
+| HTTP Client | Requests | latest |
+| Data Validation | Pydantic | latest |
+| Concurrency | Python `threading` (stdlib) | — |
+| File I/O | Python `json`, `os` (stdlib) | — |
+
+### PyRevit Button (Revit Client)
+
+| Component | Technology | Version |
+|---|---|---|
+| Language | IronPython | 2.x |
+| Revit API | Autodesk.Revit.DB | 2026 |
+| Plugin Framework | PyRevit | latest |
+| HTTP Client | `System.Net.WebClient` | .NET |
+| JSON | IronPython `json` stdlib | — |
+
+### Infrastructure
+
+| Component | Technology |
+|---|---|
+| Cloud Hosting | Railway |
+| Source Control | GitHub (auto-deploy on push) |
+| Database | Notion API (v1) |
+| AI Model | `claude-sonnet-4-20250514` |
 
 ---
 
 ## 3. Architecture & Project Structure
 
-### Folder Tree
 ```
-bot-i/                              ← Project root (also GitHub repo root)
-│
+bot-i/
+├── server.py                  # FastAPI app — main entry point
+│                              # Contains: REST endpoints, Claude agent,
+│                              # Notion helpers, background jobs, Chat UI
 ├── pyrevit_button/
-│   └── script.py                   ← PyRevit IronPython 2 script (runs inside Revit)
-│
-├── server.py                       ← FastAPI app (deployed to Railway)
-├── agent.py                        ← Local terminal-based Claude chat (dev/testing only)
-│
-├── Procfile                        ← Railway startup: `web: uvicorn server:app --host 0.0.0.0 --port $PORT`
-├── requirements.txt
-├── .env                            ← Local secrets (NOT committed to GitHub)
-├── .env.example                    ← Template for other users
-├── .gitignore                      ← Excludes .env, __pycache__, *.pyc
-└── README.md
+│   └── script.py              # IronPython PyRevit button script
+│                              # Runs inside Revit, extracts model data,
+│                              # POSTs to server or pushes directly to Notion
+├── requirements.txt           # Python dependencies for Railway
+├── Procfile                   # Railway start command:
+│                              # web: uvicorn server:app --host 0.0.0.0 --port $PORT
+├── .env                       # Local only — NOT in GitHub
+│                              # NOTION_TOKEN, ANTHROPIC_API_KEY
+├── .env.example               # Template for other users
+├── .gitignore                 # Excludes .env, __pycache__
+├── README.md                  # Setup and usage documentation
+└── /app/snapshots/            # Runtime only — created on Railway filesystem
+    └── snapshot_YYYYMMDD_HHMMSS.json   # Auto-saved on each upload
 ```
 
-### Key File Roles
+### Key Entry Points
 
-| File | Runtime Environment | Role |
-|---|---|---|
-| `pyrevit_button/script.py` | IronPython 2 inside Revit | Extracts BIM data, POSTs to server, shows UI dialog |
-| `server.py` | Python 3 on Railway (cloud) | In-memory data store, Notion push logic, Claude chat endpoint, HTML UI |
-| `agent.py` | Python 3 on developer's local machine | Alternative terminal-based Claude interface for development testing |
+| File | Role |
+|---|---|
+| `server.py` | Single-file FastAPI app — all server logic lives here |
+| `pyrevit_button/script.py` | Runs inside Revit via PyRevit — client-side only |
 
 ---
 
@@ -83,46 +94,57 @@ bot-i/                              ← Project root (also GitHub repo root)
 ### Full Pipeline
 
 ```
-[Revit Model]
-     │
-     │  Revit API (IronPython 2)
-     ▼
-[script.py — PyRevit Button]
-  - Collects: Rooms, Doors, Walls, Floors, Parking
-  - Normalises to unified JSON element schema
-  - User picks: Mode 1 | Mode 2 | Upload to Server
-     │
-     │  HTTP POST /upload-data  (System.Net.WebClient, IronPython-compatible)
-     ▼
-[server.py — FastAPI on Railway]
-  - Stores elements in global in-memory list: _revit_data = []
-  - State is ephemeral: lost on server restart
-     │
-     ├──── Mode 1/2: direct Notion push (no Claude)
-     │         POST /create-database → Notion API
-     │         POST /push-to-notion  → Notion API
-     │
-     └──── /chat or /ask: Claude-mediated push
-               │
-               │  HTTP POST /ask  { "message": "...", "history": [...] }
-               ▼
-         [Claude claude-sonnet-4-20250514]
-           Tool: preview_filtered_data  → GET /get-data?category=X&keyword=Y
-           Tool: create_new_database    → Notion API (background thread)
-           Tool: push_versioned         → Notion API (background thread)
-           Tool: check_job_status       → GET /status/{job_id}
-               │
-               ▼
-         [Notion Database]
-           - New DB per request (Mode 1 / create_new_database)
-           - OR versioned rows in fixed DB (Mode 2 / push_versioned)
+┌─────────────────────────────────────────────────────────┐
+│  REVIT (Client)                                         │
+│  script.py (IronPython)                                 │
+│  FilteredElementCollector → all categories              │
+│  clean_str() → safe_str() → JSON encode UTF-8           │
+│  POST /upload-data → Railway server                     │
+└────────────────────┬────────────────────────────────────┘
+                     │ HTTP POST
+                     ▼
+┌─────────────────────────────────────────────────────────┐
+│  RAILWAY SERVER (server.py)                             │
+│                                                         │
+│  /upload-data                                           │
+│  ├── stores elements in _revit_data (in-memory list)    │
+│  └── saves snapshot_YYYYMMDD_HHMMSS.json (filesystem)   │
+│                                                         │
+│  /chat  ←── Browser opens this URL                      │
+│  /ask   ←── Browser POSTs user messages here            │
+│  │                                                      │
+│  │  Claude Agent Loop:                                  │
+│  │  1. Receive user message                             │
+│  │  2. Call claude-sonnet-4 with TOOLS                  │
+│  │  3. Execute tool (get_revit_summary,                 │
+│  │     preview_filtered_data, get_stats_by_level,       │
+│  │     create_new_database, push_versioned,             │
+│  │     compare_snapshots, push_change_report,           │
+│  │     check_job_status)                                │
+│  │  4. Return tool result to Claude                     │
+│  │  5. Claude generates reply                           │
+│  │  6. Return {reply, history} to browser               │
+│  │                                                      │
+│  └── Background threads → Notion API                    │
+└────────────────────┬────────────────────────────────────┘
+                     │ HTTPS REST
+                     ▼
+┌─────────────────────────────────────────────────────────┐
+│  NOTION API                                             │
+│  POST /v1/databases  → create database                  │
+│  POST /v1/pages      → create records                   │
+│  POST /v1/databases/{id}/query → read versions          │
+└─────────────────────────────────────────────────────────┘
 ```
 
 ### State Management
-- **In-memory only**: `_revit_data` is a Python list living in the FastAPI process. No database, no file persistence.
-- **Job tracking**: Background push jobs are stored in a dict `_jobs = {}` keyed by UUID job_id. Each entry has `status` (`running` / `done` / `error`), `message`, and `pushed` count.
-- **Stateless between server restarts**: If Railway restarts the dyno, all data is lost. User must re-click the PyRevit button.
-- **Conversation history**: The `/ask` endpoint accepts a `history` array (list of `{role, content}` messages) which the caller must maintain and resend on each turn. Server itself is stateless between `/ask` calls.
+
+| State | Storage | Lifetime |
+|---|---|---|
+| `_revit_data` | Python in-memory list | Until next upload or server restart |
+| `_jobs` | Python in-memory dict | Until server restart |
+| `_last_compare` | Python in-memory dict | Until next compare or restart |
+| Snapshots | `/app/snapshots/*.json` | Persists across restarts, lost on redeploy |
 
 ---
 
@@ -136,12 +158,11 @@ https://problem-statement-2-production.up.railway.app
 
 ---
 
-### Endpoint Reference
+### REST Endpoints
 
 #### `GET /`
 Health check.
 
-**Response:**
 ```json
 { "status": "Revit Automation Server running" }
 ```
@@ -149,26 +170,22 @@ Health check.
 ---
 
 #### `POST /upload-data`
-Called by PyRevit `script.py` after element extraction. Replaces the entire in-memory dataset.
+Upload Revit elements from PyRevit button.
 
-**Request body:**
+**Request:**
 ```json
 {
   "elements": [
     {
-      "name": "D2A_DOOR_DBL-STAIR FD1",
-      "category": "Door",
-      "number": "D-001",
-      "unique_id": "a1b2c3d4-...",
-      "element_id": 123456,
-      "level": "MSCP DECK 1A",
-      "width": 1.2,
-      "height": 2.1,
-      "fire_rating": "FD60",
-      "frame_material": "Steel",
-      "phase_created": "New Construction",
-      "phase_demolished": "",
-      "comments": ""
+      "unique_id":        "abc123-...",
+      "element_id":       304521,
+      "category":         "Door",
+      "name":             "D2A_DOOR_SGL FD1",
+      "number":           "D-001",
+      "level":            "2A DECK",
+      "comments":         "",
+      "phase_created":    "New Construction",
+      "phase_demolished": ""
     }
   ]
 }
@@ -178,157 +195,104 @@ Called by PyRevit `script.py` after element extraction. Replaces the entire in-m
 ```json
 {
   "status": "success",
-  "summary": { "Door": 93, "Room": 84, "Wall": 210, "Floor": 45, "Parking": 366 }
+  "summary": { "Door": 10873, "Wall": 9082, "Room": 7798 },
+  "snapshot_note": "Previous snapshot available for comparison."
 }
 ```
 
 ---
 
 #### `GET /get-data`
-Retrieve stored elements, optionally filtered.
+Filter and retrieve elements.
 
-**Query params:**
-| Param | Type | Description |
+**Query parameters:**
+
+| Parameter | Type | Description |
 |---|---|---|
-| `category` | string (optional) | `Room`, `Door`, `Wall`, `Floor`, `Parking` |
-| `keyword` | string (optional) | Case-insensitive substring match on `name` field |
+| `category` | string (optional) | Filter by category name |
+| `keyword` | string (optional) | Substring match on `name` |
+| `level` | string (optional) | Substring match on `level` |
 
 **Response:**
 ```json
 {
   "status": "success",
-  "elements": [ { ...element schema... } ],
+  "elements": [ { "unique_id": "...", "element_id": 304521, "..." : "..." } ],
   "count": 42
 }
 ```
 
 ---
 
-#### `POST /create-database`
-Create a new Notion database under a parent page.
+#### `GET /get-summary`
+Returns element counts by category.
 
-**Request body:**
 ```json
 {
-  "parent_page_id": "3492bc72289b8081970ac57e2816e0c5",
-  "title": "Doors Export 2025-05-14"
+  "summary": { "Door": 10873, "Wall": 9082, "Room": 7798 },
+  "total": 28162
 }
-```
-
-**Response:**
-```json
-{
-  "status": "success",
-  "database_id": "35a2bc72-289b-8187-8f0a-da6ebb5ddd5c"
-}
-```
-
----
-
-#### `POST /push-to-notion`
-Push a list of elements into an existing Notion database. Runs synchronously (use background thread wrapper for large sets).
-
-**Request body:**
-```json
-{
-  "database_id": "35a2bc72-289b-8187-8f0a-da6ebb5ddd5c",
-  "elements": [ { ...element schema... } ],
-  "version": 2,
-  "export_date": "2025-05-14"
-}
-```
-
-**Response:**
-```json
-{
-  "status": "completed",
-  "pushed": 93,
-  "results": [
-    { "name": "D2A_DOOR_DBL-STAIR FD1", "status": 200 },
-    { "name": "D2A_DOOR_SGL FD1", "status": 200 }
-  ]
-}
-```
-
----
-
-#### `GET /get-next-version`
-Query the highest existing version number in a Notion database and return the next.
-
-**Query params:** `database_id` (string)
-
-**Response:**
-```json
-{ "next_version": 3 }
 ```
 
 ---
 
 #### `POST /ask`
-**Primary integration endpoint.** Send a user message and conversation history; server runs Claude with tools and returns AI response. Handles tool use internally.
+Main chat endpoint — accepts user message and conversation history, returns Claude reply.
 
-**Request body:**
+**Request:**
 ```json
 {
-  "message": "Export all FD1 doors into a new Notion database called Fire Doors",
-  "history": [
-    { "role": "user", "content": "hi" },
-    { "role": "assistant", "content": "Hello! How can I help you export Revit data?" }
-  ]
-}
-```
-
-**Response (success):**
-```json
-{
-  "reply": "I found 42 FD1 doors. Push job started (job_abc123). Ask 'check status' to see progress.",
-  "history": [
-    { "role": "user", "content": "Export all FD1 doors..." },
-    { "role": "assistant", "content": "I found 42 FD1 doors..." }
-  ]
-}
-```
-
-**Response (error):**
-```json
-{
-  "reply": "Error connecting to server. Please try again.",
+  "message": "How many doors on each level?",
   "history": []
 }
 ```
 
+**Response:**
+```json
+{
+  "reply": "Here are the door counts by level:\n- 2A DECK: 42 doors\n- 3A DECK: 38 doors",
+  "history": [
+    { "role": "user", "content": "How many doors on each level?" },
+    { "role": "assistant", "content": "..." }
+  ]
+}
+```
+
+> **Note:** `history` must be maintained by the caller and resent on every turn. The server is stateless between `/ask` calls.
+
 ---
 
-#### `GET /status/{job_id}`
+#### `GET /job-status/{job_id}`
 Check progress of a background Notion push job.
 
-**Response (running):**
 ```json
-{ "job_id": "abc123", "status": "running", "message": "Pushing 42 elements...", "pushed": 0 }
+{
+  "status": "running",
+  "message": "Pushing 50 / 366 records..."
+}
 ```
 
-**Response (done):**
-```json
-{ "job_id": "abc123", "status": "done", "message": "Done! Pushed 42 records.", "pushed": 42 }
-```
+Possible `status` values: `starting` / `running` / `done` / `error`
 
 ---
 
 #### `GET /chat`
-Returns a browser-rendered HTML chat UI. No params. Used by end users directly in browser.
+Returns the full HTML Chat UI page (browser-rendered). No parameters required.
 
 ---
 
-### Claude Tools (used internally by `/ask`)
+### Claude Agent Tools (Internal to `/ask`)
 
-These are the tools Claude can invoke during a `/ask` session. Relevant for Agent A if it needs to replicate or extend the tool layer.
-
-| Tool | Description | Key Inputs |
+| Tool | Trigger Phrase | Description |
 |---|---|---|
-| `preview_filtered_data` | Preview count and sample names before committing | `category`, `keyword` |
-| `create_new_database` | Create Notion DB and start background push | `title`, `category`, `keyword` |
-| `push_versioned` | Push to fixed DB with auto-incremented version | `category`, `keyword` |
-| `check_job_status` | Poll background job result | `job_id` |
+| `get_revit_summary` | "what data is available" | Returns element count by category |
+| `get_stats_by_level` | "how many X on each level" | Returns count by level (+ optional category filter) |
+| `preview_filtered_data` | Before any push | Returns count + 5 sample names |
+| `create_new_database` | "export to new database" | Background push → new Notion DB |
+| `push_versioned` | "add as new version" | Background push → fixed Notion DB with version number |
+| `compare_snapshots` | "what changed" | Diffs last 2 snapshots by `unique_id` |
+| `push_change_report` | "push change report" | Pushes diff result to new Notion DB |
+| `check_job_status` | "check status" | Returns job progress |
 
 ---
 
@@ -338,26 +302,49 @@ All categories share these base fields:
 
 ```json
 {
-  "name": "string",
-  "category": "Room | Door | Wall | Floor | Parking",
-  "number": "string",
-  "unique_id": "string (Revit UniqueId)",
-  "element_id": 123456,
-  "level": "string",
-  "phase_created": "string",
+  "unique_id":        "string (Revit UniqueId)",
+  "element_id":       304521,
+  "category":         "Door | Room | Wall | Floor | Parking | ...",
+  "name":             "string (Family + Type for non-Room; Room Name for Rooms)",
+  "number":           "string (Mark or Room Number)",
+  "level":            "string",
+  "comments":         "string",
+  "phase_created":    "string",
   "phase_demolished": "string"
 }
 ```
 
-**Category-specific fields:**
+> `script.py` uses a **universal collector** (`FilteredElementCollector.WhereElementIsNotElementType()`) — it does not hardcode specific categories. Any non-annotation, non-system Revit category is included.
 
-| Category | Extra fields |
-|---|---|
-| Room | `area`, `perimeter`, `height`, `department`, `occupancy`, `comments` |
-| Door | `width`, `height`, `fire_rating`, `frame_material`, `comments` |
-| Wall | `length`, `area`, `volume`, `base_constraint`, `top_constraint`, `unconnected_height`, `function` |
-| Floor | `area`, `volume`, `thickness`, `structural`, `comments` |
-| Parking | `mark` |
+---
+
+### Change Report Data Structure
+
+Returned by `compare_snapshots` tool and stored in `_last_compare`:
+
+```json
+{
+  "added": [
+    { "category": "Door", "element_id": 304521, "name": "D2A_DOOR_SGL FD1", "level": "2A DECK" }
+  ],
+  "deleted": [
+    { "category": "Room", "element_id": 182345, "name": "Meeting Room 01", "level": "Level 1" }
+  ],
+  "modified": [
+    {
+      "category": "Room",
+      "element_id": 193021,
+      "name": "Office 02",
+      "level": "Level 1",
+      "changes": [
+        { "field": "area", "old_value": 45.2, "new_value": 48.6 }
+      ]
+    }
+  ]
+}
+```
+
+Fields compared for change detection: `name`, `level`, `area`, `number`, `width`, `height`, `length`, `volume`, `thickness`, `fire_rating`, `function`.
 
 ---
 
@@ -365,29 +352,46 @@ All categories share these base fields:
 
 ### Required Environment Variables
 
-| Variable | Where set | Description |
+| Variable | Where Set | Description |
 |---|---|---|
-| `NOTION_TOKEN` | Railway Variables / `.env` | Notion Integration Token (`ntn_...`) |
-| `ANTHROPIC_API_KEY` | Railway Variables / `.env` | Anthropic API key (`sk-ant-...`) |
+| `NOTION_TOKEN` | Railway Variables | Notion Integration API token (`ntn_...`) |
+| `ANTHROPIC_API_KEY` | Railway Variables | Anthropic API key (`sk-ant-...`) |
 
 Both must be present for `/ask` and Notion push to function. Missing either causes a 500 error.
 
-### Hardcoded Configuration (must be updated per deployment)
+---
 
-| Constant | Location | Current value |
-|---|---|---|
-| `PARENT_PAGE_ID` | `server.py`, `agent.py` | Notion parent page for new databases |
-| `FIXED_DATABASE_ID` | `server.py`, `agent.py` | Notion DB used by Mode 2 / `push_versioned` |
-| `AUTOMATION_SERVER` | `script.py`, `agent.py` | Railway URL or `http://127.0.0.1:8000` |
+### Hardcoded Constants in `server.py`
+
+| Constant | Description |
+|---|---|
+| `PARENT_PAGE_ID` | Notion parent page where new databases are created |
+| `FIXED_DATABASE_ID` | Fixed Notion DB used for versioned pushes |
+| `SNAPSHOT_DIR` | Railway filesystem path (`/app/snapshots`) |
+
+---
 
 ### Constraints
 
-- **Ephemeral state**: In-memory only. Server restart = data loss. PyRevit button must be clicked again.
-- **IronPython 2 on client**: `script.py` cannot use `requests`, `json` with `encoding=` arg, or any CPython-only library. Uses `System.Net.WebClient` for HTTP.
-- **Revit 2025/2026**: Uses `ElementId.Value` (64-bit). Incompatible with `IntegerValue` used in Revit 2024 and below (backwards compatibility guard exists in `get_element_id()`).
-- **Railway 60s request timeout**: Large Notion pushes (300+ records) must use background threading. The `/ask` endpoint returns a `job_id` immediately; caller polls `/status/{job_id}`.
-- **Notion API rate limit**: ~3 requests/second. Each element = 1 API call. 366 parking lots ≈ 110 seconds to push.
-- **No authentication on REST API**: All endpoints on Railway are publicly accessible. Anyone with the URL can call `/upload-data` or `/ask`.
-- **Single-user data store**: `_revit_data` is a single global list. Concurrent users from different Revit models will overwrite each other's data.
-- **Model**: Hardcoded to `claude-sonnet-4-20250514`. Must be updated if model is deprecated.
-- **Notion schema**: The property names in `build_props()` in `server.py` must exactly match the column names in the target Notion database. Schema mismatch causes silent 400 errors from Notion.
+| Constraint | Detail |
+|---|---|
+| Railway 60s timeout | Solved via background threading — `/ask` returns immediately with `job_id` |
+| Snapshot persistence | JSON files survive restart but are lost on full redeploy |
+| In-memory data | `_revit_data` lost on server restart — user must re-upload via PyRevit button |
+| IronPython 2 | `script.py` must use .NET HTTP classes (`System.Net.WebClient`), no `requests` library |
+| Notion rate limit | ~3 req/sec — large pushes (300+ records) take 2–3 minutes |
+| Claude model | Hardcoded `claude-sonnet-4-20250514` in `/ask` endpoint |
+| No authentication | Anyone with the Railway URL can access `/chat` and `/upload-data` |
+| Max snapshots | Keeps only the latest 10 snapshots to save disk space |
+| Single user data store | `_revit_data` is a single global list — concurrent uploads overwrite each other |
+
+---
+
+### External Dependencies
+
+| Service | Purpose | Auth Method |
+|---|---|---|
+| Notion API | Database creation + record push | Bearer token (`NOTION_TOKEN`) |
+| Anthropic API | Claude AI agent | API key (`ANTHROPIC_API_KEY`) |
+| Railway | Cloud hosting + filesystem | GitHub auto-deploy |
+| GitHub | Source control + CI/CD | Repo connection |
