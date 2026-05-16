@@ -305,6 +305,7 @@ SCHEMA = {
     "Structural":             {"number": {"format": "number"}},
     "Version":                {"number": {"format": "number"}},
     "Export Date":            {"date": {}},
+    "Description":            {"rich_text": {}},
 }
 
 CHANGE_REPORT_SCHEMA = {
