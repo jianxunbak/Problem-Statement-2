@@ -1039,3 +1039,8 @@ def chat_ui():
 </body>
 </html>
 """
+
+
+# Agent A integration — registers POST /run on `app`. Must stay at the very
+# bottom so all existing routes are registered first. See bridge.py.
+import bridge  # noqa: E402,F401

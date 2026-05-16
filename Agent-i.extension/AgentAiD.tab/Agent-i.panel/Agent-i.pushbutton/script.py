@@ -31,20 +31,61 @@ from Autodesk.Revit.DB import (
 from pyrevit import forms, script
 
 # ============================================================
-#  CONFIG
+#  CONFIG - fill in your values
 # ============================================================
-NOTION_TOKEN = "your_notion_token_here" 
-PARENT_PAGE_ID    = "your own database parent page id here"  # e.g. "1234567890abcdef1234567890abcdef"
-FIXED_DATABASE_ID = "your_fixed_database_id_here"
-AUTOMATION_SERVER = "http://127.0.0.1:8000"
+NOTION_TOKEN      = "your_notion_token_here"
+PARENT_PAGE_ID    = "3492bc72289b8081970ac57e2816e0c5"
+FIXED_DATABASE_ID = "3492bc72289b80dda791c15cf5a575e4"
+AUTOMATION_SERVER = "https://problem-statement-2-production.up.railway.app"
 
 doc    = __revit__.ActiveUIDocument.Document
 logger = script.get_logger()
 
 
-# ------------------------------------------------------------
+# ============================================================
+#  ASCII-safe encoder (IronPython 2 UnicodeDecodeError fix)
+#  Converts ALL strings to pure ASCII before JSON serialization
+# ============================================================
+def to_ascii(val):
+    """Convert any string value to a pure ASCII string."""
+    if val is None:
+        return ""
+    try:
+        if isinstance(val, unicode):
+            return val.encode("ascii", "replace").decode("ascii")
+        if isinstance(val, str):
+            return val.decode("utf-8", "replace").encode("ascii", "replace").decode("ascii")
+        return str(val)
+    except:
+        return ""
+
+
+def deep_ascii(data):
+    """Recursively convert all strings in a dict/list to ASCII."""
+    if isinstance(data, dict):
+        result = {}
+        for k, v in data.items():
+            result[to_ascii(k)] = deep_ascii(v)
+        return result
+    if isinstance(data, list):
+        return [deep_ascii(i) for i in data]
+    if isinstance(data, (str, unicode)):
+        return to_ascii(data)
+    if isinstance(data, bool):
+        return data
+    if isinstance(data, (int, long, float)):
+        return data
+    return to_ascii(data)
+
+
+def safe_json_dumps(obj):
+    """JSON serialize with full ASCII safety for IronPython 2."""
+    return json.dumps(deep_ascii(obj))
+
+
+# ============================================================
 #  Helpers
-# ------------------------------------------------------------
+# ============================================================
 def get_element_id(el):
     try:
         return int(el.Id.Value)
@@ -54,7 +95,9 @@ def get_element_id(el):
         except:
             return 0
 
+
 def get_family_and_type(el):
+    """Returns 'FamilyName TypeName' e.g. 'D2A_DOOR_DBL-STAIR FD1'"""
     try:
         symbol = doc.GetElement(el.GetTypeId())
         if symbol is None:
@@ -62,10 +105,11 @@ def get_family_and_type(el):
         type_name   = ""
         family_name = ""
         p = symbol.get_Parameter(BuiltInParameter.ALL_MODEL_TYPE_NAME)
-        if p:
-            type_name = p.AsString() or ""
+        if p and p.AsString():
+            type_name = to_ascii(p.AsString())
         try:
-            family_name = symbol.Family.Name or ""
+            if symbol.Family:
+                family_name = to_ascii(symbol.Family.Name)
         except:
             pass
         if family_name and type_name:
@@ -74,21 +118,37 @@ def get_family_and_type(el):
     except:
         return "Unnamed"
 
+
+def get_type_description(el):
+    """Get Type Description from element's type properties."""
+    try:
+        symbol = doc.GetElement(el.GetTypeId())
+        if symbol:
+            p = symbol.get_Parameter(BuiltInParameter.ALL_MODEL_DESCRIPTION)
+            if p and p.AsString():
+                return to_ascii(p.AsString())
+    except:
+        pass
+    return ""
+
+
 def get_str(el, bip):
     try:
         p = el.get_Parameter(bip)
         v = p.AsString() if p else None
-        return v if v else ""
+        return to_ascii(v) if v else ""
     except:
         return ""
+
 
 def get_val_str(el, bip):
     try:
         p = el.get_Parameter(bip)
         v = p.AsValueString() if p else None
-        return v if v else ""
+        return to_ascii(v) if v else ""
     except:
         return ""
+
 
 def get_int(el, bip):
     try:
@@ -97,12 +157,14 @@ def get_int(el, bip):
     except:
         return 0
 
+
 def get_double(el, bip):
     try:
         p = el.get_Parameter(bip)
         return p.AsDouble() if p else 0.0
     except:
         return 0.0
+
 
 def get_level_name(el):
     for bip in [
@@ -116,7 +178,7 @@ def get_level_name(el):
             if p:
                 v = p.AsValueString() or p.AsString()
                 if v:
-                    return v
+                    return to_ascii(v)
         except:
             pass
     try:
@@ -124,10 +186,11 @@ def get_level_name(el):
         if level_id:
             level = doc.GetElement(level_id)
             if level:
-                return level.Name
+                return to_ascii(level.Name)
     except:
         pass
     return ""
+
 
 def ft2_to_m2(val):
     return round(val * 0.0929, 3)
@@ -139,9 +202,9 @@ def ft3_to_m3(val):
     return round(val * 0.0283168, 3)
 
 
-# ------------------------------------------------------------
+# ============================================================
 #  Collect Rooms
-# ------------------------------------------------------------
+# ============================================================
 def collect_rooms():
     collector = (
         FilteredElementCollector(doc)
@@ -152,7 +215,7 @@ def collect_rooms():
     for el in collector:
         try:
             elements.append({
-                "unique_id":        el.UniqueId,
+                "unique_id":        to_ascii(el.UniqueId),
                 "element_id":       get_element_id(el),
                 "category":         "Room",
                 "name":             get_str(el, BuiltInParameter.ROOM_NAME) or "Unnamed",
@@ -164,6 +227,7 @@ def collect_rooms():
                 "department":       get_str(el, BuiltInParameter.ROOM_DEPARTMENT),
                 "occupancy":        get_str(el, BuiltInParameter.ROOM_OCCUPANCY),
                 "comments":         get_str(el, BuiltInParameter.ALL_MODEL_INSTANCE_COMMENTS),
+                "description":      get_type_description(el),
                 "phase_created":    get_str(el, BuiltInParameter.PHASE_CREATED),
                 "phase_demolished": get_str(el, BuiltInParameter.PHASE_DEMOLISHED),
             })
@@ -172,9 +236,9 @@ def collect_rooms():
     return elements
 
 
-# ------------------------------------------------------------
+# ============================================================
 #  Collect Doors
-# ------------------------------------------------------------
+# ============================================================
 def collect_doors():
     collector = (
         FilteredElementCollector(doc)
@@ -185,7 +249,7 @@ def collect_doors():
     for el in collector:
         try:
             elements.append({
-                "unique_id":        el.UniqueId,
+                "unique_id":        to_ascii(el.UniqueId),
                 "element_id":       get_element_id(el),
                 "category":         "Door",
                 "name":             get_family_and_type(el),
@@ -196,6 +260,7 @@ def collect_doors():
                 "fire_rating":      get_str(el, BuiltInParameter.DOOR_FIRE_RATING),
                 "frame_material":   get_str(el, BuiltInParameter.DOOR_FRAME_MATERIAL),
                 "comments":         get_str(el, BuiltInParameter.ALL_MODEL_INSTANCE_COMMENTS),
+                "description":      get_type_description(el),
                 "phase_created":    get_str(el, BuiltInParameter.PHASE_CREATED),
                 "phase_demolished": get_str(el, BuiltInParameter.PHASE_DEMOLISHED),
             })
@@ -204,9 +269,9 @@ def collect_doors():
     return elements
 
 
-# ------------------------------------------------------------
+# ============================================================
 #  Collect Walls
-# ------------------------------------------------------------
+# ============================================================
 def collect_walls():
     collector = (
         FilteredElementCollector(doc)
@@ -217,7 +282,7 @@ def collect_walls():
     for el in collector:
         try:
             elements.append({
-                "unique_id":          el.UniqueId,
+                "unique_id":          to_ascii(el.UniqueId),
                 "element_id":         get_element_id(el),
                 "category":           "Wall",
                 "name":               get_family_and_type(el),
@@ -230,6 +295,8 @@ def collect_walls():
                 "top_constraint":     get_val_str(el, BuiltInParameter.WALL_HEIGHT_TYPE),
                 "unconnected_height": ft_to_m(get_double(el, BuiltInParameter.WALL_USER_HEIGHT_PARAM)),
                 "function":           get_val_str(el, BuiltInParameter.FUNCTION_PARAM),
+                "comments":           get_str(el, BuiltInParameter.ALL_MODEL_INSTANCE_COMMENTS),
+                "description":        get_type_description(el),
                 "phase_created":      get_str(el, BuiltInParameter.PHASE_CREATED),
                 "phase_demolished":   get_str(el, BuiltInParameter.PHASE_DEMOLISHED),
             })
@@ -238,9 +305,9 @@ def collect_walls():
     return elements
 
 
-# ------------------------------------------------------------
+# ============================================================
 #  Collect Floors
-# ------------------------------------------------------------
+# ============================================================
 def collect_floors():
     collector = (
         FilteredElementCollector(doc)
@@ -251,7 +318,7 @@ def collect_floors():
     for el in collector:
         try:
             elements.append({
-                "unique_id":        el.UniqueId,
+                "unique_id":        to_ascii(el.UniqueId),
                 "element_id":       get_element_id(el),
                 "category":         "Floor",
                 "name":             get_family_and_type(el),
@@ -262,6 +329,7 @@ def collect_floors():
                 "thickness":        ft_to_m(get_double(el, BuiltInParameter.FLOOR_ATTR_THICKNESS_PARAM)),
                 "structural":       get_int(el, BuiltInParameter.FLOOR_PARAM_IS_STRUCTURAL),
                 "comments":         get_str(el, BuiltInParameter.ALL_MODEL_INSTANCE_COMMENTS),
+                "description":      get_type_description(el),
                 "phase_created":    get_str(el, BuiltInParameter.PHASE_CREATED),
                 "phase_demolished": get_str(el, BuiltInParameter.PHASE_DEMOLISHED),
             })
@@ -270,9 +338,9 @@ def collect_floors():
     return elements
 
 
-# ------------------------------------------------------------
+# ============================================================
 #  Collect Parking
-# ------------------------------------------------------------
+# ============================================================
 def collect_parking():
     collector = (
         FilteredElementCollector(doc)
@@ -283,13 +351,14 @@ def collect_parking():
     for el in collector:
         try:
             elements.append({
-                "unique_id":        el.UniqueId,
+                "unique_id":        to_ascii(el.UniqueId),
                 "element_id":       get_element_id(el),
                 "category":         "Parking",
                 "name":             get_family_and_type(el),
                 "number":           get_str(el, BuiltInParameter.ALL_MODEL_MARK),
                 "level":            get_level_name(el),
                 "comments":         get_str(el, BuiltInParameter.ALL_MODEL_INSTANCE_COMMENTS),
+                "description":      get_type_description(el),
                 "phase_created":    get_str(el, BuiltInParameter.PHASE_CREATED),
                 "phase_demolished": get_str(el, BuiltInParameter.PHASE_DEMOLISHED),
             })
@@ -313,9 +382,9 @@ def collect_elements():
     return elements
 
 
-# ------------------------------------------------------------
+# ============================================================
 #  Notion HTTP helpers
-# ------------------------------------------------------------
+# ============================================================
 def make_webclient():
     wc = WebClient()
     wc.Headers.Add("Authorization", "Bearer " + NOTION_TOKEN)
@@ -324,9 +393,10 @@ def make_webclient():
     wc.Encoding = Encoding.UTF8
     return wc
 
+
 def notion_post(url, payload_dict):
     wc   = make_webclient()
-    body = json.dumps(payload_dict)
+    body = safe_json_dumps(payload_dict)
     try:
         result = wc.UploadString(url, "POST", body)
         return "OK", json.loads(result)
@@ -338,32 +408,34 @@ def notion_post(url, payload_dict):
     finally:
         wc.Dispose()
 
+
 def notion_query(url, payload_dict=None):
     if payload_dict is None:
         payload_dict = {}
     return notion_post(url, payload_dict)
 
 
-# ------------------------------------------------------------
+# ============================================================
 #  Build Notion page payload
-# ------------------------------------------------------------
+# ============================================================
 def build_notion_payload(database_id, el):
     cat = el.get("category", "")
 
     def rt(val):
-        return {"rich_text": [{"text": {"content": str(val) if val else ""}}]}
+        return {"rich_text": [{"text": {"content": to_ascii(val)[:2000]}}]}
 
     def num(val):
         return {"number": val if val is not None else 0}
 
     props = {
-        "Name":             {"title": [{"text": {"content": el.get("name", "")}}]},
+        "Name":             {"title": [{"text": {"content": to_ascii(el.get("name", ""))[:2000]}}]},
         "Category":         rt(cat),
         "UniqueId":         rt(el.get("unique_id", "")),
         "Element ID":       num(el.get("element_id", 0)),
         "Level":            rt(el.get("level", "")),
         "Number":           rt(el.get("number", "")),
         "Comments":         rt(el.get("comments", "")),
+        "Description":      rt(el.get("description", "")),
         "Phase Created":    rt(el.get("phase_created", "")),
         "Phase Demolished": rt(el.get("phase_demolished", "")),
     }
@@ -396,14 +468,12 @@ def build_notion_payload(database_id, el):
         props["Thickness (m)"] = num(el.get("thickness", 0))
         props["Structural"]    = num(el.get("structural", 0))
 
-    # Parking has no extra numeric fields, base props are sufficient
-
     return {"parent": {"database_id": database_id}, "properties": props}
 
 
-# ------------------------------------------------------------
+# ============================================================
 #  Mode 1: Create new Database (Snapshot)
-# ------------------------------------------------------------
+# ============================================================
 def create_snapshot_database(date_str):
     url = "https://api.notion.com/v1/databases"
     payload = {
@@ -417,6 +487,7 @@ def create_snapshot_database(date_str):
             "Level":                  {"rich_text": {}},
             "Number":                 {"rich_text": {}},
             "Comments":               {"rich_text": {}},
+            "Description":            {"rich_text": {}},
             "Phase Created":          {"rich_text": {}},
             "Phase Demolished":       {"rich_text": {}},
             "Area (m2)":              {"number": {"format": "number"}},
@@ -444,6 +515,7 @@ def create_snapshot_database(date_str):
     print("Created Database: Revit Export " + date_str + " | ID: " + new_id)
     return new_id
 
+
 def export_all_as_new(database_id, elements):
     url = "https://api.notion.com/v1/pages"
     for el in elements:
@@ -455,9 +527,9 @@ def export_all_as_new(database_id, elements):
             logger.error("  x Failed: " + el["name"] + " | " + str(data))
 
 
-# ------------------------------------------------------------
+# ============================================================
 #  Mode 2: Version tracking
-# ------------------------------------------------------------
+# ============================================================
 def get_next_version(database_id):
     url = "https://api.notion.com/v1/databases/" + database_id + "/query"
     status, data = notion_query(url, {})
@@ -467,6 +539,7 @@ def get_next_version(database_id):
         if v is not None:
             versions.append(v)
     return max(versions) + 1 if versions else 1
+
 
 def export_with_version(database_id, version, elements):
     url         = "https://api.notion.com/v1/pages"
@@ -483,12 +556,14 @@ def export_with_version(database_id, version, elements):
             logger.error("  x Failed: " + el["name"] + " | " + str(data))
 
 
-# ------------------------------------------------------------
+# ============================================================
 #  Upload to Server (for Claude Agent)
-# ------------------------------------------------------------
+# ============================================================
 def upload_to_server(elements):
-    url  = AUTOMATION_SERVER + "/upload-data"
-    body = json.dumps({"elements": elements})
+    url = AUTOMATION_SERVER + "/upload-data"
+
+    # Deep convert all strings to ASCII before JSON serialization
+    body = safe_json_dumps({"elements": elements})
 
     wc = WebClient()
     wc.Headers.Add("Content-Type", "application/json")
@@ -567,17 +642,16 @@ def main():
         if ok:
             forms.alert(
                 "Done! " + str(len(elements)) + " elements uploaded.\n\n"
-                "Run agent.py in your terminal\n"
-                "and tell Claude what to push to Notion.",
+                "Open the chat at:\n" + AUTOMATION_SERVER + "/chat",
                 title="Upload Successful"
             )
         else:
             forms.alert(
                 "Could not reach the server.\n\n"
-                "Make sure server.py is running:\n"
-                "uvicorn server:app --reload",
+                "Make sure the Railway server is running.",
                 title="Server Not Found"
             )
+
 
 if __name__ == "__main__":
     main()

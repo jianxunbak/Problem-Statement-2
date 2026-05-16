@@ -64,10 +64,14 @@ bot-i/
 ├── server.py                  # FastAPI app — main entry point
 │                              # Contains: REST endpoints, Claude agent,
 │                              # Notion helpers, background jobs, Chat UI
-├── pyrevit_button/
-│   └── script.py              # IronPython PyRevit button script
-│                              # Runs inside Revit, extracts model data,
-│                              # POSTs to server or pushes directly to Notion
+├── AgentI.extension/          # PyRevit extension bundle
+│   └── AgentAid.tab/
+│       └── Sync.panel/
+│           └── Export to Notion.pushbutton/
+│               ├── script.py  # IronPython PyRevit button script
+│               │              # Runs inside Revit, extracts model data,
+│               │              # POSTs to server or pushes directly to Notion
+│               └── bundle.yaml  # Button title / tooltip metadata
 ├── requirements.txt           # Python dependencies for Railway
 ├── Procfile                   # Railway start command:
 │                              # web: uvicorn server:app --host 0.0.0.0 --port $PORT
@@ -85,7 +89,7 @@ bot-i/
 | File | Role |
 |---|---|
 | `server.py` | Single-file FastAPI app — all server logic lives here |
-| `pyrevit_button/script.py` | Runs inside Revit via PyRevit — client-side only |
+| `AgentI.extension/AgentAid.tab/Sync.panel/Export to Notion.pushbutton/script.py` | Runs inside Revit via PyRevit — client-side only |
 
 ---
 

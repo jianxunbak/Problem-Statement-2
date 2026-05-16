@@ -25,8 +25,12 @@ The pipeline supports two workflows:
 
 ```
 bot-i/
-├── pyrevit_button/
-│   └── script.py        # PyRevit button script (runs inside Revit)
+├── AgentI.extension/                            # PyRevit extension bundle
+│   └── AgentAid.tab/
+│       └── Sync.panel/
+│           └── Export to Notion.pushbutton/
+│               ├── script.py                    # PyRevit button script (runs inside Revit)
+│               └── bundle.yaml                  # Button metadata (title, tooltip)
 ├── server.py            # FastAPI server (stores Revit data, handles Notion API)
 ├── agent.py             # Claude AI agent (terminal chat interface)
 ├── .env.example         # Environment variable template
@@ -78,7 +82,9 @@ NOTION_TOKEN=your_notion_token_here
 ANTHROPIC_API_KEY=your_anthropic_api_key_here
 ```
 
-### 3. Configure `pyrevit_button/script.py`
+### 3. Configure the PyRevit button script
+
+Edit [AgentI.extension/AgentAid.tab/Sync.panel/Export to Notion.pushbutton/script.py](AgentI.extension/AgentAid.tab/Sync.panel/Export%20to%20Notion.pushbutton/script.py).
 
 Fill in your Notion credentials and page IDs at the top of the file:
 
@@ -91,7 +97,12 @@ AUTOMATION_SERVER = "http://127.0.0.1:8000"    # or your Railway URL
 
 ### 4. Install PyRevit button
 
-Copy the `pyrevit_button/` folder into your PyRevit extension tab directory and reload PyRevit in Revit.
+Register the `AgentI.extension/` folder with PyRevit so it discovers the extension bundle. Two options:
+
+- **CLI:** `pyrevit extend ui AgentI <path-to-this-repo>` — or —
+- **GUI:** Open PyRevit settings → **Custom Extension Directories** → add the path to this repo's root (the parent of `AgentI.extension/`).
+
+Then click **PyRevit → Reload** in Revit. The **AgentAid** tab with a **Sync** panel and **Export to Notion** button will appear in the ribbon.
 
 ---
 
