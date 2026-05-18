@@ -338,6 +338,7 @@ def build_props(el, version=None, export_date=None):
         "Level":            rt(el.get("level", "")),
         "Number":           rt(el.get("number", "")),
         "Comments":         rt(el.get("comments", "")),
+        "Description":      rt(el.get("description", "")),
         "Phase Created":    rt(el.get("phase_created", "")),
         "Phase Demolished": rt(el.get("phase_demolished", "")),
     }
